@@ -8,9 +8,9 @@ A production-grade SaaS platform for sending large-scale notifications via Email
 
 | Layer | Technology |
 |---|---|
-| Backend | Java 21, Spring Boot 3.3 |
+| Backend | Java 17, Spring Boot 3.3.5 |
 | Frontend | React 18, TypeScript |
-| Database | PostgreSQL 18 |
+| Database | PostgreSQL |
 | Message Queue | Apache Kafka |
 | Cache / Rate Limiting | Redis |
 | DB Migrations | Flyway |
@@ -22,11 +22,11 @@ A production-grade SaaS platform for sending large-scale notifications via Email
 
 Make sure you have these installed before starting:
 
-- [Java 21](https://adoptium.net/)
-- [Maven](https://maven.apache.org/download.cgi)
+- [Java 17+](https://adoptium.net/)
+- [Maven 3.8+](https://maven.apache.org/download.cgi)
 - [Node.js 18+](https://nodejs.org/)
 - [Docker Desktop](https://www.docker.com/products/docker-desktop/)
-- [PostgreSQL 18](https://www.postgresql.org/download/)
+- [PostgreSQL](https://www.postgresql.org/download/)
 - [Git](https://git-scm.com/)
 
 ---
@@ -79,15 +79,16 @@ spring:
   datasource:
     url: jdbc:postgresql://localhost:5432/notifshot
     username: postgres
-    password: YOUR_PASSWORD   # ← change this
+    password: (your password)
 ```
 
 ---
 
 ### 5. Run the backend
 
+From the project root:
+
 ```bash
-cd notifshot
 mvn spring-boot:run
 ```
 
@@ -122,13 +123,12 @@ The dashboard will open automatically at `http://localhost:3000`.
 
 ## Using the Platform
 
-### Create a Tenant
+### Create a Tenant (via Postman or curl)
 
-```
-POST http://localhost:8080/api/v1/tenants
-Content-Type: application/json
-
-{
+```bash
+curl -X POST http://localhost:8080/api/v1/tenants \
+  -H "Content-Type: application/json" \
+  -d '{
     "name": "Acme Corporation",
     "email": "admin@acme.com",
     "monthlyCampaignLimit": 100,
@@ -136,7 +136,7 @@ Content-Type: application/json
     "campaignsUsed": 0,
     "messagesUsed": 0,
     "active": true
-}
+  }'
 ```
 
 ### Create a Campaign via Dashboard
@@ -151,10 +151,11 @@ Content-Type: application/json
 recipientId,email,phone
 REC001,alice@example.com,+60123456781
 REC002,bob@example.com,+60123456782
+REC003,charlie@example.com,+60123456783
 ```
 
 6. Click **Create Campaign**
-7. You will be redirected to the Campaign Detail page where you can watch live delivery stats update in real time
+7. You will be redirected to the Campaign Detail page where live delivery stats update in real time
 
 ---
 
@@ -164,10 +165,35 @@ REC002,bob@example.com,+60123456782
 |---|---|---|
 | POST | `/api/v1/tenants` | Create a tenant |
 | GET | `/api/v1/tenants` | List all tenants |
-| POST | `/api/v1/campaigns` | Create a campaign + upload CSV |
+| POST | `/api/v1/campaigns` | Create campaign + upload CSV |
 | GET | `/api/v1/campaigns` | List campaigns (supports pagination) |
 | GET | `/api/v1/campaigns/{id}` | Get campaign details and live stats |
 | POST | `/api/v1/campaigns/{id}/retry-failures` | Retry all failed jobs |
+
+---
+
+## Architecture Overview
+
+```
+Frontend (React TypeScript) — localhost:3000
+      ↓
+REST API (Spring Boot 3.3.5) — localhost:8080
+      ↓
+PostgreSQL ← Flyway migrations (versioned schema)
+      ↓
+Kafka (async processing) — localhost:9092
+      ↓
+Notification Workers (3 concurrent consumers)
+  → Rule Engine
+      - Global Suppression Check
+      - Quiet Hours (10pm–8am per recipient timezone)
+      - Tenant Credit Check
+      - Deduplication (5 min window via Redis)
+  → Rate Limiter (100 req/min per channel — Bucket4j token bucket)
+  → Simulated Provider (20% failure rate, 50–200ms latency)
+  → Retry with exponential backoff (max 3 attempts)
+  → Circuit Breaker per provider (Resilience4j)
+```
 
 ---
 
@@ -177,28 +203,21 @@ REC002,bob@example.com,+60123456782
 |---|---|
 | `http://localhost:8080/actuator/health` | Health check |
 | `http://localhost:8080/actuator/metrics` | Application metrics |
-| `http://localhost:8080/actuator/prometheus` | Prometheus metrics |
+| `http://localhost:8080/actuator/prometheus` | Prometheus metrics scrape endpoint |
 
 ---
 
-## Architecture Overview
+## Key Features
 
-```
-Frontend (React)
-      ↓
-REST API (Spring Boot)
-      ↓
-PostgreSQL ← Flyway migrations
-      ↓
-Kafka (async processing)
-      ↓
-Notification Workers
-  → Rule Engine (suppression, quiet hours, credit check, deduplication)
-  → Rate Limiter (100 req/min per channel via Bucket4j)
-  → Simulated Provider (20% failure rate, 50–200ms latency)
-  → Retry with exponential backoff (max 3 attempts)
-  → Circuit Breaker (Resilience4j)
-```
+- **Multi-tenancy** — full data isolation per tenant
+- **Async processing** — API returns 202 immediately, Kafka handles delivery
+- **Idempotency** — no duplicate sends even after crashes or retries
+- **Rule Engine** — suppression, quiet hours, credit limits, deduplication
+- **Rate limiting** — token bucket algorithm, 100 req/min per channel
+- **Streaming CSV** — processes millions of rows without loading into memory
+- **Circuit breakers** — auto-stops requests to failing providers
+- **PII masking** — emails and phone numbers masked in all logs (GDPR/SOC2)
+- **Live dashboard** — delivery stats poll every 5 seconds
 
 ---
 
@@ -222,13 +241,17 @@ docker-compose down
 - Make sure PostgreSQL is running on port 5432
 
 **Kafka errors on startup**
-- Make sure Docker Desktop is running
-- Run `docker-compose up -d` before starting the backend
+- Make sure Docker Desktop is running before starting the backend
+- Run `docker-compose up -d` first
 
 **Frontend shows Network Error**
 - Make sure the backend is running on port 8080
-- Check that CORS is configured (it is by default)
+- Both backend and frontend must be running at the same time
 
 **npm start fails**
-- Run `npm install` first
+- Run `npm install` first inside the `notifshot-frontend` folder
 - Make sure Node.js 18+ is installed: `node --version`
+
+**Campaign stays RUNNING**
+- This resolves automatically once all Kafka jobs finish processing
+- Refresh the campaign detail page after a few seconds
