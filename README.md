@@ -2,7 +2,7 @@
 
 A production-grade SaaS platform for sending large-scale notifications via Email, SMS, and Push. Built with Java Spring Boot, React TypeScript, Kafka, Redis, and PostgreSQL.
 
-https://ibb.co/2Yn9n26h
+<img src="https://i.ibb.co/0VD7DNX2/notifshot.png" alt="notifshot" width="700"/>
 
 ---
 
