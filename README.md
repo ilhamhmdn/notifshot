@@ -2,6 +2,8 @@
 
 A production-grade SaaS platform for sending large-scale notifications via Email, SMS, and Push. Built with Java Spring Boot, React TypeScript, Kafka, Redis, and PostgreSQL.
 
+https://ibb.co/2Yn9n26h
+
 ---
 
 ## Tech Stack
