@@ -31,3 +31,7 @@ build/
 
 ### VS Code ###
 .vscode/
+
+# Frontend
+notifshot-frontend/node_modules/
+notifshot-frontend/build/
