@@ -25,3 +25,18 @@ export const campaignApi = {
   retryFailures: (id: string) =>
     api.post(`/campaigns/${id}/retry-failures`).then(r => r.data),
 };
+
+export const tenantApi = {
+  getAll: () =>
+    api.get<any[]>('/tenants').then(r => r.data),
+
+  create: (data: { name: string; email: string }) =>
+    api.post<any>('/tenants', {
+      ...data,
+      monthlyCampaignLimit: 100,
+      monthlyMessageLimit: 1000000,
+      campaignsUsed: 0,
+      messagesUsed: 0,
+      active: true,
+    }).then(r => r.data),
+};

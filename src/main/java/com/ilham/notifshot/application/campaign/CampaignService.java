@@ -21,6 +21,8 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import java.io.IOException;
 import java.io.InputStreamReader;
@@ -130,7 +132,13 @@ public class CampaignService {
                         .retryCount(0)
                         .build();
 
-                notificationProducer.sendNotificationJob(message);
+                final NotificationJobMessage finalMessage = message;
+                TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+                    @Override
+                    public void afterCommit() {
+                        notificationProducer.sendNotificationJob(finalMessage);
+                    }
+                });
                 recipientCount++;
             }
         }
@@ -175,6 +183,14 @@ public class CampaignService {
                 .findRetryableJobsByCampaignId(campaignId);
 
         for (NotificationJob job : failedJobs) {
+            // Reset retry count and status so it can be processed fresh
+            job.setRetryCount(0);
+            job.setStatus(NotificationStatus.PENDING);
+            notificationJobRepository.save(job);
+
+            // Decrement failed count since we're retrying
+            campaignRepository.decrementFailedCount(campaignId);
+
             NotificationJobMessage message = NotificationJobMessage.builder()
                     .notificationJobId(job.getId())
                     .tenantId(job.getTenant().getId())
@@ -182,7 +198,7 @@ public class CampaignService {
                     .recipientId(job.getRecipient().getId())
                     .channel(job.getChannel())
                     .idempotencyKey(job.getIdempotencyKey())
-                    .retryCount(job.getRetryCount())
+                    .retryCount(0)
                     .build();
 
             notificationProducer.sendRetryJob(message);

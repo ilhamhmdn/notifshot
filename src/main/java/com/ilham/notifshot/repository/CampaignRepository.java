@@ -33,4 +33,8 @@ public interface CampaignRepository extends JpaRepository<Campaign, UUID> {
     @Modifying
     @Query("UPDATE Campaign c SET c.skippedCount = c.skippedCount + 1 WHERE c.id = :id")
     void incrementSkippedCount(UUID id);
+
+    @Modifying
+    @Query("UPDATE Campaign c SET c.failedCount = c.failedCount - 1 WHERE c.id = :id")
+    void decrementFailedCount(UUID id);
 }

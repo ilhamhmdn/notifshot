@@ -13,6 +13,8 @@ import java.util.UUID;
 @Repository
 public interface NotificationJobRepository extends JpaRepository<NotificationJob, UUID> {
 
+    long countByCampaignId(UUID campaignId);
+
     Optional<NotificationJob> findByIdempotencyKey(String idempotencyKey);
 
     List<NotificationJob> findByCampaignIdAndStatus(UUID campaignId, NotificationStatus status);
@@ -23,6 +25,6 @@ public interface NotificationJobRepository extends JpaRepository<NotificationJob
     @Query("UPDATE NotificationJob j SET j.status = :status WHERE j.id = :id")
     void updateStatus(UUID id, NotificationStatus status);
 
-    @Query("SELECT j FROM NotificationJob j WHERE j.status = 'FAILED' AND j.retryCount < j.maxRetries AND j.campaign.id = :campaignId")
+    @Query("SELECT j FROM NotificationJob j WHERE j.status = 'FAILED' AND j.campaign.id = :campaignId")
     List<NotificationJob> findRetryableJobsByCampaignId(UUID campaignId);
 }

@@ -1,6 +1,8 @@
 package com.ilham.notifshot.application.notification;
 
 import com.ilham.notifshot.config.KafkaConfig;
+import com.ilham.notifshot.domain.campaign.Campaign;
+import com.ilham.notifshot.domain.campaign.CampaignStatus;
 import com.ilham.notifshot.domain.notification.*;
 import com.ilham.notifshot.domain.recipient.Recipient;
 import com.ilham.notifshot.domain.tenant.Tenant;
@@ -15,6 +17,7 @@ import org.springframework.kafka.annotation.KafkaListener;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 import java.time.LocalDateTime;
+import java.util.UUID;
 
 @Slf4j
 @Component
@@ -54,9 +57,18 @@ public class NotificationJobConsumer {
 
         if (job == null) return;
 
-        // Idempotency check — already sent
+        log.info("job={} campaign.transactional={} channel={}", jobId, job.getCampaign().isTransactional(), job.getChannel());
+
+// Idempotency check — already sent
         if (job.getStatus() == NotificationStatus.SENT) {
             log.info("Job {} already SENT — skipping duplicate", jobId);
+            return;
+        }
+
+// If not PENDING or PROCESSING, skip
+        if (job.getStatus() != NotificationStatus.PENDING &&
+                job.getStatus() != NotificationStatus.PROCESSING) {
+            log.info("Job {} has status {} — skipping", jobId, job.getStatus());
             return;
         }
 
@@ -74,6 +86,7 @@ public class NotificationJobConsumer {
                 .recipient(recipient)
                 .channel(job.getChannel())
                 .recipientCount(1)
+                .retryCount(job.getRetryCount())
                 .build();
 
         RuleResult ruleResult = ruleEngine.evaluate(context);
@@ -84,6 +97,7 @@ public class NotificationJobConsumer {
                 notificationJobRepository.save(job);
                 campaignRepository.incrementSkippedCount(job.getCampaign().getId());
                 log.info("job={} SKIPPED reason={}", jobId, ruleResult.getReason());
+                checkAndCompleteCampaign(job);
                 return;
             }
             case DELAY -> {
@@ -98,6 +112,7 @@ public class NotificationJobConsumer {
                 notificationJobRepository.save(job);
                 campaignRepository.incrementFailedCount(job.getCampaign().getId());
                 log.info("job={} {} reason={}", jobId, ruleResult.getAction(), ruleResult.getReason());
+                checkAndCompleteCampaign(job);
                 return;
             }
             default -> { /* ALLOW — continue */ }
@@ -139,6 +154,7 @@ public class NotificationJobConsumer {
             notificationJobRepository.save(job);
             campaignRepository.incrementSentCount(job.getCampaign().getId());
             log.info("job={} tenant={} campaign={} SENT", jobId, tenantId, campaignId);
+            checkAndCompleteCampaign(job);
         } else {
             handleFailure(job, message);
         }
@@ -148,7 +164,7 @@ public class NotificationJobConsumer {
         job.incrementRetry();
 
         if (job.canRetry()) {
-            job.setStatus(NotificationStatus.FAILED);
+            job.setStatus(NotificationStatus.PENDING);
             notificationJobRepository.save(job);
 
             NotificationJobMessage retryMessage = NotificationJobMessage.builder()
@@ -168,7 +184,37 @@ public class NotificationJobConsumer {
             notificationJobRepository.save(job);
             campaignRepository.incrementFailedCount(job.getCampaign().getId());
             log.warn("job={} FAILED permanently after {} attempts", job.getId(), job.getRetryCount());
+            checkAndCompleteCampaign(job);
         }
+    }
+
+    private void checkAndCompleteCampaign(NotificationJob job) {
+        UUID campaignId = job.getCampaign().getId();
+
+        Campaign campaign = campaignRepository.findById(campaignId).orElse(null);
+        if (campaign == null) return;
+
+        // Don't overwrite already completed campaigns
+        if (campaign.getStatus() == CampaignStatus.COMPLETED ||
+                campaign.getStatus() == CampaignStatus.FAILED) return;
+
+        long pending = notificationJobRepository
+                .countByCampaignIdAndStatus(campaignId, NotificationStatus.PENDING);
+        long processing = notificationJobRepository
+                .countByCampaignIdAndStatus(campaignId, NotificationStatus.PROCESSING);
+
+        if (pending > 0 || processing > 0) return;
+
+        long totalJobs = notificationJobRepository.countByCampaignId(campaignId);
+        long failedJobs = notificationJobRepository
+                .countByCampaignIdAndStatus(campaignId, NotificationStatus.FAILED);
+
+        campaign.setStatus(failedJobs == totalJobs
+                ? CampaignStatus.FAILED
+                : CampaignStatus.COMPLETED);
+
+        campaignRepository.save(campaign);
+        log.info("Campaign {} marked as {}", campaignId, campaign.getStatus());
     }
 
     @KafkaListener(

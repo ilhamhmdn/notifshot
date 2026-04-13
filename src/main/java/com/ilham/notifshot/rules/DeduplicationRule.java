@@ -18,6 +18,11 @@ public class DeduplicationRule implements NotificationRule {
 
     @Override
     public RuleResult evaluate(RuleContext context) {
+        // Don't deduplicate retries — only check fresh sends
+        if (context.getRetryCount() > 0) {
+            return RuleResult.allow();
+        }
+
         String key = buildDedupKey(context);
         Boolean isNew = redisTemplate.opsForValue().setIfAbsent(key, "1", DEDUP_TTL);
 

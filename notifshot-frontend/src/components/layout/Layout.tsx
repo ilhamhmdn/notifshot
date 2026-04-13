@@ -33,6 +33,7 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
         </span>
         {navItem('/', 'Campaigns')}
         {navItem('/create', 'Create Campaign')}
+        {navItem('/tenants', 'Tenants')}
       </nav>
       <main style={{ maxWidth: 1200, margin: '0 auto', padding: '32px 24px' }}>
         {children}

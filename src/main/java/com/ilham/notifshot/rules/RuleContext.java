@@ -15,4 +15,5 @@ public class RuleContext {
     private final Recipient recipient;
     private final Channel channel;
     private final int recipientCount;
+    private final int retryCount;
 }

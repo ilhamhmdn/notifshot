@@ -5,6 +5,7 @@ import { campaignApi } from '../services/api';
 import { Campaign } from '../types';
 import { StatusBadge } from '../components/common/StatusBadge';
 import { StatCard } from '../components/common/StatCard';
+import { useTenants } from '../hooks/useTenants';
 
 export const CampaignDetail = () => {
   const { id } = useParams<{ id: string }>();
@@ -12,6 +13,7 @@ export const CampaignDetail = () => {
   const [campaign, setCampaign] = useState<Campaign | null>(null);
   const [history, setHistory] = useState<any[]>([]);
   const [retrying, setRetrying] = useState(false);
+  const { tenantMap } = useTenants();
 
   useEffect(() => {
     if (!id) return;
@@ -83,6 +85,7 @@ export const CampaignDetail = () => {
         <table style={{ width: '100%', fontSize: 14 }}>
           <tbody>
             {[
+              ['Tenant', tenantMap[campaign.tenantId] || campaign.tenantId],
               ['Channel', campaign.channel],
               ['Message Template', campaign.messageTemplate],
               ['Skipped', campaign.skippedCount],
